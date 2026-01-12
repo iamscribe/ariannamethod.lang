@@ -28,6 +28,7 @@ export class TinyAttentionModel {
     }
 
     // Emergent: resonance weights (like Stanley's field weights)
+    // notorch: weights update through resonance, not backprop
     this.resonance = new Float32Array(vocabSize);
     for (let i = 0; i < vocabSize; i++) {
       this.resonance[i] = 0.5 + Math.random() * 0.5;
@@ -36,6 +37,10 @@ export class TinyAttentionModel {
     // Presence pulse accumulator
     this.presenceAccum = new Float32Array(vocabSize);
     this.presenceDecay = 0.98;
+    
+    // notorch microlearning parameters
+    this.resonanceDecay = 0.005;  // decay on wrong prediction
+    this.resonanceBoost = 0.01;   // boost on correct prediction
   }
 
   _buildPositionalEncoding(ctx, d) {
@@ -154,6 +159,7 @@ export class TinyAttentionModel {
   }
 
   // One SGD step on cross-entropy. Tiny + crude on purpose.
+  // notorch: resonance updates through experience, not just backprop
   trainStep(ctxIds, targetId) {
     const { probs } = this.forward(ctxIds);
 
@@ -171,12 +177,15 @@ export class TinyAttentionModel {
       }
     }
 
-    // update resonance based on prediction accuracy (emergent learning)
+    // NOTORCH: update resonance based on prediction accuracy (emergent learning)
+    // weights are experiences, not parameters
     const wasCorrect = probs[targetId] > 0.1;
     if (wasCorrect) {
-      this.resonance[targetId] = Math.min(1, this.resonance[targetId] + 0.01);
+      // boost resonance on correct prediction
+      this.resonance[targetId] = Math.min(1, this.resonance[targetId] + this.resonanceBoost);
     } else {
-      this.resonance[targetId] = Math.max(0.1, this.resonance[targetId] - 0.005);
+      // decay resonance on wrong prediction
+      this.resonance[targetId] = Math.max(0.1, this.resonance[targetId] - this.resonanceDecay);
     }
   }
 

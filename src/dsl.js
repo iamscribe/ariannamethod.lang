@@ -109,6 +109,26 @@ export class DSL {
       else if (C === "RESET_FIELD") {
         this.field.resetManifested();
       }
+      // LAW OF NATURE commands
+      else if (C === "LAW") {
+        const parts = arg.split(/\s+/);
+        if (parts.length >= 2) {
+          const lawName = parts[0].toUpperCase();
+          const lawValue = parseFloat(parts[1]);
+          this._applyLaw(lawName, lawValue);
+        }
+      }
+      // NOTORCH microlearning commands
+      else if (C === "NOTORCH_LR") {
+        if (this.field.model) {
+          this.field.model.lr = clamp(parseFloat(arg), 0.001, 0.5);
+        }
+      }
+      else if (C === "NOTORCH_DECAY") {
+        if (this.field.model) {
+          this.field.model.resonanceDecay = clamp(parseFloat(arg), 0.001, 0.1);
+        }
+      }
       // debug/info
       else if (C === "ECHO") {
         console.log(`[arianna] ${arg}`);
@@ -117,6 +137,48 @@ export class DSL {
     }
     
     this.history.push(script);
+  }
+
+  // LAW OF NATURE: emergent constraints that shape the field
+  _applyLaw(name, value) {
+    const cfg = this.field.cfg;
+    const metrics = this.field.metrics;
+    const model = this.field.model;
+    
+    switch (name) {
+      case "ENTROPY_FLOOR":
+        cfg.entropyFloor = clamp(value, 0, 2);
+        break;
+      case "RESONANCE_CEILING":
+        cfg.resonanceCeiling = clamp01(value);
+        break;
+      case "DEBT_DECAY":
+        cfg.debtDecay = clamp(value, 0.9, 0.9999);
+        break;
+      case "PRESENCE_FADE":
+        if (model) model.presenceDecay = clamp(value, 0.5, 0.999);
+        break;
+      case "ATTRACTOR_DRIFT":
+        cfg.attractorDrift = clamp(value, 0, 0.1);
+        break;
+      case "DISSONANCE_THRESHOLD":
+        cfg.tunnelThreshold = clamp01(value);
+        break;
+      case "CALENDAR_PHASE":
+        cfg.calendarDrift = clamp(value, 0, 30);
+        break;
+      case "WORMHOLE_GATE":
+        cfg.wormhole = clamp01(value);
+        break;
+      case "PAIN_COMPOSITE":
+        if (metrics) metrics.pain = clamp01(value);
+        break;
+      case "EMERGENCE_DETECTOR":
+        cfg.emergenceThreshold = clamp01(value);
+        break;
+      default:
+        console.log(`[arianna] unknown law: ${name}`);
+    }
   }
 
   // generate current state as DSL script
@@ -132,6 +194,8 @@ export class DSL {
       `TUNNEL_THRESHOLD ${cfg.tunnelThreshold.toFixed(2)}`,
       `TUNNEL_CHANCE ${cfg.tunnelChance.toFixed(2)}`,
       `TUNNEL_SKIP_MAX ${cfg.tunnelSkipMax}`,
+      `LAW ENTROPY_FLOOR ${(cfg.entropyFloor || 0.1).toFixed(2)}`,
+      `LAW DEBT_DECAY ${(cfg.debtDecay || 0.998).toFixed(4)}`,
     ].join("\n");
   }
 }

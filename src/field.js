@@ -1,6 +1,7 @@
 // field.js — геометрия + prophecy/debt + calendar conflict + wormholes
 // "the world is a grid. tokens are manifested. model distribution is destined."
 // "debt accumulates as |destined - manifested| proxy"
+// calendar conflict: 354 (lunar) vs 365 (solar) = 11-day drift (from PITOMADOM)
 
 export class Field {
   constructor({ w, h, tokenizer, model, metrics }) {
@@ -22,6 +23,13 @@ export class Field {
       tunnelThreshold: 0.55,    // dissonance gate
       tunnelChance: 0.22,       // probability when gated
       tunnelSkipMax: 7,         // how many steps to compress
+      
+      // LAW OF NATURE defaults
+      entropyFloor: 0.1,        // minimum uncertainty
+      resonanceCeiling: 0.95,   // maximum resonance
+      debtDecay: 0.998,         // debt fades over time
+      attractorDrift: 0.01,     // attractors shift
+      emergenceThreshold: 0.6,  // when emergence spikes
     };
 
     // map: 1=solid wall, 0=empty
@@ -36,6 +44,10 @@ export class Field {
 
     this.time = 0;
     this._prevProbs = null;
+    
+    // calendar tracking (PITOMADOM style)
+    this.hebrewCycle = 354;     // lunar year in days
+    this.gregorianCycle = 365;  // solar year in days
   }
 
   idx(x, y) { 
@@ -92,11 +104,22 @@ export class Field {
   step(px, py, pa, dt) {
     this.time += dt;
 
-    // calendar conflict drift (phase mismatch between lunar 354 and solar 365)
-    const g = phase(this.time, 365);
-    const h = phase(this.time, 354);
-    const raw = Math.abs(g - h);
-    const drift = raw * (this.cfg.calendarDrift / 11);
+    // CALENDAR CONFLICT (from PITOMADOM)
+    // Hebrew lunar year: 354 days (12 months × 29.5 days)
+    // Gregorian solar year: 365 days
+    // The 11-day difference creates phase drift that accumulates
+    // This drift is the WORMHOLE GATE — when calendars disagree, spacetime tears
+    
+    const hebrewPhase = phase(this.time, this.hebrewCycle);   // 0..1
+    const gregorianPhase = phase(this.time, this.gregorianCycle); // 0..1
+    
+    // raw drift: absolute phase difference
+    // when phases diverge, the calendar conflict intensifies
+    const rawDrift = Math.abs(hebrewPhase - gregorianPhase);
+    
+    // scaled drift: multiply by configured intensity (default 11 for 11-day difference)
+    // this creates the "11-day drift tracking" from PITOMADOM
+    const drift = rawDrift * (this.cfg.calendarDrift / 11);
     this.metrics.calendarDrift = drift;
 
     // context token from motion/pose
@@ -105,12 +128,18 @@ export class Field {
 
     // forward "destined" distribution
     const out = this.model.forward(this.ctx);
-    this.metrics.entropy = 0.92 * this.metrics.entropy + 0.08 * out.entropy;
+    
+    // apply entropy floor (LAW OF NATURE)
+    const entropy = Math.max(this.cfg.entropyFloor, out.entropy);
+    this.metrics.entropy = 0.92 * this.metrics.entropy + 0.08 * entropy;
     this.metrics.perplexity = 0.92 * this.metrics.perplexity + 0.08 * out.perplexity;
-    this.metrics.resonanceField = 0.90 * this.metrics.resonanceField + 0.10 * out.resonanceField;
+    
+    // apply resonance ceiling (LAW OF NATURE)
+    const resonance = Math.min(this.cfg.resonanceCeiling, out.resonanceField);
+    this.metrics.resonanceField = 0.90 * this.metrics.resonanceField + 0.10 * resonance;
 
-    // update emergence
-    this.metrics.updateEmergence(out.entropy, out.resonanceField);
+    // update emergence (LAW: low entropy + high resonance = the field "knows" something)
+    this.metrics.updateEmergence(entropy, resonance);
 
     // dissonance = drift + symKL(prev, now) + entropy delta
     let symkl = 0;
@@ -255,8 +284,8 @@ export class Field {
       }
     }
     
-    // debt decay (breath)
-    this.metrics.debt *= 0.998;
+    // debt decay (LAW OF NATURE: suffering is not eternal)
+    this.metrics.debt *= this.cfg.debtDecay;
   }
 
   _manifestAheadStrip(px, py, pa, probs, stepAhead) {
