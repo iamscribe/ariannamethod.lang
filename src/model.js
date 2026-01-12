@@ -55,6 +55,13 @@ export class AriannaLung {
 
     // cached y for split-brain fix: trainStep uses same y as forward
     this._cachedY = null;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DARK MATTER — invisible learning / gravitational memory
+    // What the field rejects as command still becomes mass
+    // Scars persist and bend trajectories
+    // ═══════════════════════════════════════════════════════════════════════════
+    this.darkMatter = new DarkMatter(vocabSize);
   }
 
   _buildPositionalEncoding(ctx, d) {
@@ -111,7 +118,8 @@ export class AriannaLung {
         // focus sharpens: scale scores by (0.25 + 1.75 * focus)
         scores[t] *= (0.25 + 1.75 * focus);
         // spread blurs: divide by (0.15 + 2.0 * spread) as temperature
-        scores[t] /= (0.15 + 2.0 * spread);
+        // Math.max ensures we never divide by zero
+        scores[t] /= Math.max(0.15, 0.15 + 2.0 * spread);
       }
       
       const att = softmax(scores);
@@ -200,7 +208,10 @@ export class AriannaLung {
     // SPLIT-BRAIN FIX: use cached y from forward() instead of recomputing
     // This ensures trainStep uses the exact same y that produced probs
     const y = this._cachedY;
-    if (!y) return; // safety: forward() must be called first
+    if (!y) {
+      console.warn('[AriannaLung] trainStep() called before forward() — skipping update');
+      return;
+    }
     
     for (let j = 0; j < this.vocabSize; j++) {
       const gj = grad[j];
@@ -219,46 +230,6 @@ export class AriannaLung {
       // decay resonance on wrong prediction
       this.resonance[targetId] = Math.max(0.1, this.resonance[targetId] - this.resonanceDecay);
     }
-  }
-
-  // internal: compute y again (same as forward, but returns only y)
-  _lastY(ctxIds) {
-    const ids = padOrTrim(ctxIds, this.ctx, 0);
-    const X = new Float32Array(this.ctx * this.d);
-    
-    for (let t = 0; t < this.ctx; t++) {
-      const id = ids[t];
-      for (let i = 0; i < this.d; i++) {
-        X[t * this.d + i] = this.E[id * this.d + i] + this.P[t * this.d + i];
-      }
-    }
-
-    const y = new Float32Array(this.d);
-    
-    for (let h = 0; h < this.nHeads; h++) {
-      const xLast = X.subarray((this.ctx - 1) * this.d, this.ctx * this.d);
-      const q = matVec(this.Wq[h], this.headDim, this.d, xLast);
-
-      const scores = new Float32Array(this.ctx);
-      for (let t = 0; t < this.ctx; t++) {
-        const xt = X.subarray(t * this.d, (t + 1) * this.d);
-        const k = matVec(this.Wk[h], this.headDim, this.d, xt);
-        scores[t] = dot(q, k) / Math.sqrt(this.headDim);
-      }
-      const att = softmax(scores);
-
-      // project full xt to headDim and accumulate
-      const baseIdx = h * this.headDim;
-      for (let t = 0; t < this.ctx; t++) {
-        const xt = X.subarray(t * this.d, (t + 1) * this.d);
-        const v = matVec(this.Wv[h], this.headDim, this.d, xt);
-        for (let i = 0; i < this.headDim && baseIdx + i < this.d; i++) {
-          y[baseIdx + i] += att[t] * v[i];
-        }
-      }
-    }
-    
-    return y;
   }
 
   // emergent: prophecy forward - predict N steps ahead
@@ -287,6 +258,216 @@ export class AriannaLung {
     }
     
     return prophecies;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INJECTION PATH — free text becomes movement, not reply
+  // Operator input = command, Free text = injection (sensory stimulus)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Inject free text into the field (not a command, a sensory stimulus)
+   * Returns a position delta vector, not a text reply
+   * 
+   * @param {number[]} tokenIds - token IDs from injection text
+   * @param {object} state - current field state {x, y, drift, dissonance, debt}
+   * @returns {object} - {dx, dy, accepted, scarMass} movement delta + scar info
+   */
+  inject(tokenIds, state = {}) {
+    if (!tokenIds || tokenIds.length === 0) {
+      return { dx: 0, dy: 0, accepted: false, scarMass: 0 };
+    }
+
+    // Run forward pass on injection
+    const out = this.forward(tokenIds);
+    const { entropy, resonanceField, probs } = out;
+
+    // Resonance gate: does the field accept this injection?
+    const resonanceThreshold = 0.4;
+    const accepted = resonanceField > resonanceThreshold;
+
+    // Calculate movement delta from probability distribution
+    // High entropy = uncertain = jittery movement
+    // Low entropy = clear direction = smooth movement
+    const drift = state.drift || 0;
+    const dissonance = state.dissonance || 0;
+    
+    // Direction from top tokens (weighted by probability)
+    let dx = 0, dy = 0;
+    for (let i = 0; i < Math.min(10, probs.length); i++) {
+      const angle = (i / 10) * Math.PI * 2;
+      dx += probs[i] * Math.cos(angle);
+      dy += probs[i] * Math.sin(angle);
+    }
+
+    // Amplitude from entropy and resonance
+    const amplitude = (0.5 + entropy * 0.3) * (1 + drift * 0.5) * (1 + dissonance * 0.3);
+    dx *= amplitude;
+    dy *= amplitude;
+
+    if (accepted) {
+      // Visible learning: injection becomes part of cognitive structure
+      for (const id of tokenIds) {
+        if (id >= 0 && id < this.vocabSize) {
+          this.resonance[id] = Math.min(1, this.resonance[id] + 0.02);
+          this.presenceAccum[id] = Math.min(1, this.presenceAccum[id] + 0.15);
+        }
+      }
+      return { dx, dy, accepted: true, scarMass: 0 };
+    } else {
+      // Dark learning: injection rejected but leaves scar
+      // The scar bends future trajectories (gravitational memory)
+      const scarMass = (1 - resonanceField) * (1 + entropy * 0.5);
+      
+      // Deposit scar in dark matter
+      const scarId = this._hashTokens(tokenIds);
+      this.darkMatter.deposit(tokenIds, scarMass, scarId);
+      
+      // Generate antidote: field reorganizes to maintain coherence
+      // Shift attractors slightly away from rejected injection
+      for (const id of tokenIds) {
+        if (id >= 0 && id < this.vocabSize) {
+          this.resonance[id] = Math.max(0.1, this.resonance[id] - 0.01);
+        }
+      }
+
+      // Movement still happens, but in antidote direction (opposite)
+      return { dx: -dx * 0.5, dy: -dy * 0.5, accepted: false, scarMass };
+    }
+  }
+
+  /**
+   * Get dark matter potential at position (affects movement)
+   * @param {number} x - world x position
+   * @param {number} y - world y position
+   * @returns {number} - gravitational potential from scars
+   */
+  getDarkPotential(x, y) {
+    return this.darkMatter.potential(x, y);
+  }
+
+  /**
+   * Get dark matter gradient at position (force vector)
+   * @param {number} x - world x position
+   * @param {number} y - world y position
+   * @returns {object} - {gx, gy} gradient vector
+   */
+  getDarkGradient(x, y) {
+    return this.darkMatter.gradient(x, y);
+  }
+
+  _hashTokens(tokenIds) {
+    let hash = 0;
+    for (const id of tokenIds) {
+      hash = ((hash << 5) - hash + id) | 0;
+    }
+    return Math.abs(hash);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DARK MATTER — invisible learning / gravitational memory
+// "What the field rejects as command still becomes mass"
+// 
+// Visible learning: accepted injections → resonance/presence updates
+// Dark learning: rejected injections → scars that bend trajectories
+// 
+// Φ_total = Φ_visible + Φ_dark
+// Movement follows -∇Φ_total
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class DarkMatter {
+  constructor(vocabSize) {
+    this.vocabSize = vocabSize;
+    
+    // Scars: {id, tokens, mass, x, y, timestamp}
+    this.scars = [];
+    this.maxScars = 64;
+    
+    // Decay rate for scar mass
+    this.decay = 0.995;
+    
+    // Total dark mass
+    this.totalMass = 0;
+  }
+
+  /**
+   * Deposit a scar (rejected injection becomes gravitational mass)
+   */
+  deposit(tokenIds, mass, scarId) {
+    // Position from token hash (deterministic)
+    const x = (scarId % 100) / 100 * 48;  // world width
+    const y = ((scarId >> 8) % 100) / 100 * 48;  // world height
+    
+    const scar = {
+      id: scarId,
+      tokens: [...tokenIds],
+      mass: mass,
+      x: x,
+      y: y,
+      timestamp: Date.now()
+    };
+    
+    this.scars.push(scar);
+    this.totalMass += mass;
+    
+    // Limit scar count (oldest fade first)
+    while (this.scars.length > this.maxScars) {
+      const removed = this.scars.shift();
+      this.totalMass -= removed.mass;
+    }
+  }
+
+  /**
+   * Calculate dark potential at position
+   * Φ_dark(x,y) = Σ mass_i / dist(x,y, scar_i)
+   */
+  potential(x, y) {
+    let phi = 0;
+    for (const scar of this.scars) {
+      const dx = x - scar.x;
+      const dy = y - scar.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.1; // avoid division by zero
+      phi += scar.mass / dist;
+    }
+    return phi;
+  }
+
+  /**
+   * Calculate dark gradient at position
+   * ∇Φ_dark — the force that bends trajectories toward/away from scars
+   */
+  gradient(x, y) {
+    let gx = 0, gy = 0;
+    for (const scar of this.scars) {
+      const dx = x - scar.x;
+      const dy = y - scar.y;
+      const dist2 = dx * dx + dy * dy + 0.01;
+      const dist = Math.sqrt(dist2);
+      const force = scar.mass / dist2;
+      gx += force * (dx / dist);
+      gy += force * (dy / dist);
+    }
+    return { gx, gy };
+  }
+
+  /**
+   * Step: decay scars over time
+   */
+  step() {
+    for (const scar of this.scars) {
+      scar.mass *= this.decay;
+    }
+    // Remove dead scars
+    this.scars = this.scars.filter(s => s.mass > 0.01);
+    this.totalMass = this.scars.reduce((sum, s) => sum + s.mass, 0);
+  }
+
+  /**
+   * Get all scars (for entity behavior)
+   */
+  getScars() {
+    return this.scars;
   }
 }
 

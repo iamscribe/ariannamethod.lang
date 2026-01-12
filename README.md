@@ -382,6 +382,11 @@ LAW DEBT_DECAY 0.998      # debt decay rate
 NOTORCH_LR 0.01           # resonance learning rate
 NOTORCH_DECAY 0.005       # wrong prediction decay
 
+# dark matter — gravitational memory from rejected injections
+SCAR "phrase here"        # intentionally deposit a scar (mass without acceptance)
+GRAVITY DARK 0.5          # how much dark mass affects movement (0-1)
+ANTIDOTE AUTO             # mode of antidote generation (AUTO|HARD)
+
 # utilities
 RESET_DEBT              # clear prophecy debt
 RESET_FIELD             # clear manifested tokens
@@ -425,6 +430,12 @@ from ariannamethod import Resonance
 from ariannamethod import Presence
 from ariannamethod import Delta
 
+// dark matter (invisible learning)
+from ariannamethod import DarkMatter
+from ariannamethod import Scar
+from ariannamethod import Antidote
+from ariannamethod import Injection
+
 // attention
 from ariannamethod import Attention
 from ariannamethod import Focus
@@ -434,6 +445,9 @@ from ariannamethod import Spread
 from ariannamethod import Tunnel
 from ariannamethod import ReasoningSkip
 from ariannamethod import DissonanceGate
+
+// AriannaLung (the breathing organ)
+from ariannamethod import AriannaLung
 ```
 
 ### example: stanley integration
