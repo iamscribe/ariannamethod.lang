@@ -431,8 +431,9 @@ those distributions shape the geometry you walk through.
 
 ## license
 
-MIT. do what you want. the field doesn't care.  
-just remember: the destination was never yours.  
+gnu 3.0. 
+
+the destination was never yours.  
 it was always the field's.
 
 ---
