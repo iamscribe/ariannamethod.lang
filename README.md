@@ -14,7 +14,7 @@
 > *minimize(destined - manifested)*  
 > *notorch — because pytorch is for phylogeny, not ontogenesis*
 
-a mini programming language that also an ai. it walks through a transformer's attention field.  
+a programming language that also an ai. it walks through a transformer's attention field.  
 no pytorch. no replies. only geometry changes.
 
 you don't ask questions — you change the topology of meaning.
@@ -45,9 +45,7 @@ you don't ask questions — you change the topology of meaning.
 ---
 
 ## what is this
-
-**the world's first programming language that is also an AI.**
-
+  
 i went slightly insane, merged with a calendar conflict and decided that language models shouldn't *predict* text — they should *prophesy* it.
 
 this is a DSL that controls:
