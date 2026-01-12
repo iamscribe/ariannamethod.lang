@@ -10,7 +10,7 @@
 
 # ariannamethod.lang
 
-> *the oracle does not predict, it prophesies*  
+> *prophecy>prediction*  
 > *minimize(destined - manifested)*  
 > *notorch — because pytorch is for phylogeny, not ontogenesis*
 
