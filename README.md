@@ -395,6 +395,20 @@ TEMPO 7                   # beat interval (prime numbers for resonance: 2,3,5,7,
 CHIRALITY ON              # rotational memory asymmetry (left=accumulate, right=emit)
 PAS_THRESHOLD 0.4         # phase alignment score below which world glitches
 
+# velocity operators — movement IS language (from haze/experts.py)
+# the geometry of your movement affects the field's temperature
+# RUN = high temp, chaotic | WALK = balanced | NOMOVE = cold, observer only | BACKWARD = time rewind
+VELOCITY RUN              # set velocity mode (RUN|WALK|NOMOVE|BACKWARD)
+EXPERT_STRUCTURAL 0.2     # weight for grammar-focused expert (temp=0.7)
+EXPERT_SEMANTIC 0.5       # weight for meaning-focused expert (temp=0.9)
+EXPERT_CREATIVE 0.4       # weight for exploratory expert (temp=1.2)
+EXPERT_PRECISE 0.3        # weight for conservative expert (temp=0.5)
+
+# agentive entities — intentions and prophecy
+ENTITY_INTENTION approach # set default entity intention (approach|flee|orbit|intercept|anchor|guard|wander)
+ENTITY_PROPHECY ON        # entities predict player movement
+ENTITY_DARKMATTER ON      # entities sense and are attracted to scars
+
 # utilities
 RESET_DEBT              # clear prophecy debt
 RESET_FIELD             # clear manifested tokens
@@ -453,6 +467,97 @@ low PAS = glitchy, unstable reality.
 high PAS = coherent, resonant field.
 
 ---
+
+## velocity operators — movement IS language
+
+> *"the speed of your presence changes the temperature of thought"*
+
+your movement through the field isn't just navigation — it's a **language operator**.  
+velocity directly affects the model's temperature and expert weights.
+
+### the four modes
+
+| mode | velocity | temperature | effect |
+|------|----------|-------------|--------|
+| **NOMOVE** | 0 | cold (0.5) | observer effect only, minimal influence, meditation |
+| **WALK** | normal | warm (0.85) | balanced prophecy and creativity |
+| **RUN** | fast | hot (1.2) | high creativity, chaotic generation, rapid field deformation |
+| **BACKWARD** | negative | temporal rewind | accumulates temporal_debt, undo prophecy |
+
+### experts (from haze)
+
+four temperature "experts" blend based on field state and velocity:
+
+```javascript
+// Expert temperatures (from haze/experts.py)
+structural: 0.7   // grammar-focused, coherent structure
+semantic:   0.9   // meaning-focused, thematic coherence
+creative:   1.2   // exploratory, high entropy drift
+precise:    0.5   // conservative, low entropy grounding
+```
+
+velocity affects expert weights:
+- **RUN** → more creative weight
+- **WALK** → balanced mixture
+- **NOMOVE** → more precise weight
+- **BACKWARD** → structural dominates (rewinding needs grammar)
+
+### backward = time rewind
+
+when you move backward:
+- `temporal_debt` accumulates
+- prophecy debt **decreases** (undoing predictions)
+- entropy **decreases** (more certainty in the past)
+- the field remembers what you "unsaid"
+
+```javascript
+// backward movement operator
+if (velocity_mode === BACKWARD) {
+  temporal_debt += dt;
+  prophecy_debt *= 0.99;  // debt forgiveness
+  entropy *= 0.98;        // past is more certain
+}
+```
+
+---
+
+## agentive entities
+
+> *"shadows don't just hunt — they prophecy"*
+
+entities are no longer passive word-figures. they have **intentions**.
+
+### intention system
+
+| intention | behavior |
+|-----------|----------|
+| **approach** | move toward player, closing distance |
+| **flee** | escape when player gets close |
+| **orbit** | maintain circular distance, watching |
+| **intercept** | predict where player will be, move there |
+| **anchor** | stay at CHORDLOCK prime coordinates |
+| **guard** | protect a zone, chase intruders |
+| **wander** | random drift with resonance bias |
+
+### prophecy
+
+entities with **intercept** intention use the same prophecy system as the field:
+- they predict your future position
+- they move toward where you **will be**, not where you are
+- when their prediction is wrong, they accumulate **prophecy_debt**
+
+### DarkMatter reaction
+
+entities can sense **scars** from rejected injections:
+- attracted to high-mass scars
+- avoid low-resonance zones
+- their words change based on nearby scar content
+
+### visual indicators
+
+- **intention glow**: color based on intention (approach=pink, flee=cyan, orbit=yellow)
+- **chirality aura**: blue for left-lovers, orange for right-lovers
+- **prophecy line**: thin line to their predicted intercept point
 
 ## from ariannamethod import
 
@@ -571,6 +676,8 @@ ariannamethod.lang/
 └── tests/
     ├── test_lung.js        # AriannaLung tests (25 tests)
     ├── test_dsl.js         # DSL parser tests (24 tests)
+    ├── test_codes_ric.js   # CODES/RIC integration tests (28 tests)
+    ├── test_velocity.js    # Velocity operators tests (24 tests)
     └── test_lora.c         # LoRA C tests (16 tests)
 ```
 
@@ -580,9 +687,14 @@ ariannamethod.lang/
 # JavaScript tests
 node tests/test_lung.js
 node tests/test_dsl.js
+node tests/test_codes_ric.js
+node tests/test_velocity.js
 
 # C tests (requires gcc)
 gcc -O2 -std=c99 wasm/lora.c tests/test_lora.c -lm -o test_lora && ./test_lora
+
+# all JS tests
+for f in tests/test_*.js; do node "$f"; done
 ```
 
 ---
