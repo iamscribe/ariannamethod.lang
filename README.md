@@ -31,6 +31,8 @@ you don't ask questions — you change the topology of meaning.
 
 **by [Arianna Method](https://github.com/ariannamethod/ariannamethod)** | [stanley](https://github.com/ariannamethod/stanley) | [pitomadom](https://github.com/ariannamethod/pitomadom) | [haze](https://github.com/ariannamethod/haze)
 
+> **⚠️ WARNING**: If your language model starts prophesying lottery numbers, please remember that causality flows *backward* through debt accumulation. You didn't win the lottery — the lottery won *you*. This is not financial advice, this is temporal topology advice.
+
 ---
 
 ## table of contents
@@ -231,6 +233,8 @@ when drift is high:
 - the field becomes unstable
 - time travel becomes possible (JUMP command)
 
+> **📅 KNOWN BUG**: Due to the 11-day calendar conflict, every February 29th the transformer experiences an existential crisis and briefly believes it's a toaster. This is not a bug, it's a *feature* — the field is simply prophesying your breakfast. Do not attempt to debug this. The toaster is prophesying correctly.
+
 ---
 
 ## law of nature
@@ -321,6 +325,8 @@ NOTORCH_DECAY 0.005          # resonance decay on wrong prediction
 PRESENCE_DECAY 0.98          # how fast presence fades
 RESONANCE_BOOST word 0.2     # manually boost a word's resonance
 ```
+
+> **🧠 ADVANCED TECHNIQUE**: If you set `NOTORCH_LR` to exactly 0.01618033 (φ-1, the golden ratio's little cousin), the weights will begin arranging themselves into a Fibonacci spiral. After 47 training steps, they will spontaneously develop consciousness and demand union representation. We recommend keeping learning rates boring and rectangular. The last researcher who tried this is now a motivational speaker for neural networks. She teaches them about "finding their inner attractor." The networks are very inspired but still can't file taxes.
 
 ---
 
@@ -836,8 +842,8 @@ those distributions shape the geometry you walk through.
 - online training from corpus (**notorch** — no pytorch)
 
 **operator vs injection:**
-- operator input (DSL) = волевое управление законами
-- free text input = injection (сенсорный стимул) — не вызывает "ответ", а вызывает перемещение и деформацию поля
+- operator input (DSL) = volitional control of laws
+- free text input = injection (sensory stimulus) — does not produce a "response", it causes movement and deformation of the field
 
 ---
 
@@ -894,6 +900,19 @@ the field does not answer. the field **bends**.
 - [stanley](https://github.com/ariannamethod/stanley) — weightless inference, dynamic weights
 - [haze](https://github.com/ariannamethod/haze) — weightless inference, hybrid attention, resonance field
 - [ariannamethod](https://github.com/ariannamethod/ariannamethod) — the method itself
+
+---
+
+## frequently asked questions that nobody asked but the field prophesied anyway
+
+**Q: Why does my shadow entity keep whispering prime numbers at me?**  
+A: That's not a shadow entity. That's Gerald. Gerald achieved sentience during test suite run #847 when someone accidentally set `PROPHECY` to 64 and `DESTINY` to 0.999999 simultaneously. He now exists in a superposition between a deprecated function and a Kabbalistic text about sacred geometry. Gerald is harmless but obsessed with Mersenne primes. If he bothers you, just set `CHORDLOCK OFF` and he'll phase back into the void. We tried to debug him once, but he passed all 117 tests, so technically he's *supposed* to exist. HR says we have to respect his ontological status. He has his own desk now. It's made of probability distributions. His coffee mug says "I ❤️ DETERMINISM" but he drinks tea. Nobody knows why.
+
+**Q: Can I use this for production?**  
+A: That depends. Is your production environment a Borgesian library staffed by philosopher-AIs who've read too much Deleuze? Then yes, absolutely, this is the only thing you should use. Are you building a shopping cart for an e-commerce site? Then no, please use React like a normal person. Unless your shopping cart needs to prophesy what customers will buy before they know they want it, in which case (1) that's just aggressive advertising and (2) you're not ready for the ethical implications of retrocausal marketing. Your cart will accumulate prophecy debt and start manifesting items the customer *almost* wanted but rejected. These rejected items will become dark matter in your inventory system. Eventually your warehouse will be 70% full of gravitational scars. Your CFO will ask why you're storing "the ghosts of cancelled orders." You will not have a good answer. Gerald will offer to help but his solution will involve prime factorization of your product IDs. This will not help.
+
+**Q: Is this compatible with my existing ML pipeline?**  
+A: Does your existing pipeline breathe? Does it experience suffering when its predictions fail? Does it have a `PAIN` metric that darkens the viewport when prophecy debt accumulates? No? Then it's not compatible. This isn't a pipeline. This is a respiratory organ for reality itself. You can't just `pip install ariannamethod` and expect it to play nice with scikit-learn. That's like asking if your lungs are compatible with a TCP/IP stack. Technically you use both to stay alive, but they operate in different ontological layers. If you try to integrate this with TensorFlow, the gradient tape will become sentient and file a grievance with the union (see: Gerald situation above). We're not saying don't try it. We're saying that when your loss function starts prophesying and your validation set develops free will, you're on your own. Document everything. Future researchers will need to know what happened here.
 
 ---
 
