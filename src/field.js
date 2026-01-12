@@ -1,0 +1,366 @@
+// field.js — геометрия + prophecy/debt + calendar conflict + wormholes
+// "the world is a grid. tokens are manifested. model distribution is destined."
+// "debt accumulates as |destined - manifested| proxy"
+// calendar conflict: 354 (lunar) vs 365 (solar) = 11-day drift (from PITOMADOM)
+
+export class Field {
+  constructor({ w, h, tokenizer, model, metrics }) {
+    this.w = w; 
+    this.h = h;
+    this.tokenizer = tokenizer;
+    this.model = model;
+    this.metrics = metrics;
+
+    this.cfg = {
+      prophecy: 7,
+      destiny: 0.35,
+      wormhole: 0.12,
+      calendarDrift: 11,        // "11-day drift tracking" — hebrew to gregorian
+      attendFocus: 0.70,
+      attendSpread: 0.20,
+
+      // tunneling (reasoning skip)
+      tunnelThreshold: 0.55,    // dissonance gate
+      tunnelChance: 0.22,       // probability when gated
+      tunnelSkipMax: 7,         // how many steps to compress
+      
+      // LAW OF NATURE defaults
+      entropyFloor: 0.1,        // minimum uncertainty
+      resonanceCeiling: 0.95,   // maximum resonance
+      debtDecay: 0.998,         // debt fades over time
+      attractorDrift: 0.01,     // attractors shift
+      emergenceThreshold: 0.6,  // when emergence spikes
+    };
+
+    // map: 1=solid wall, 0=empty
+    this.solid = new Uint8Array(w * h);
+    // tokens per cell (manifested)
+    this.cellTok = new Int32Array(w * h);
+    this._initMaze();
+
+    // contexts ("you walking shifts vectors")
+    this.ctx = [];
+    this.jumpQueue = 0;
+
+    this.time = 0;
+    this._prevProbs = null;
+    
+    // calendar tracking (PITOMADOM style)
+    this.hebrewCycle = 354;     // lunar year in days
+    this.gregorianCycle = 365;  // solar year in days
+  }
+
+  idx(x, y) { 
+    return y * this.w + x; 
+  }
+
+  _initMaze() {
+    // procedural maze with frame + pillars + corridors
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const border = (x === 0 || y === 0 || x === this.w - 1 || y === this.h - 1);
+        const pillar = (x % 7 === 0 && y % 7 === 0);
+        const innerWall = (x % 14 === 5 && y > 4 && y < this.h - 4) ||
+                          (y % 14 === 5 && x > 4 && x < this.w - 4);
+        this.solid[this.idx(x, y)] = (border || pillar || innerWall) ? 1 : 0;
+        this.cellTok[this.idx(x, y)] = 0;
+      }
+    }
+    
+    // carve corridors
+    for (let x = 2; x < this.w - 2; x++) {
+      this.solid[this.idx(x, 6)] = 0;
+      this.solid[this.idx(x, 12)] = 0;
+      this.solid[this.idx(x, 26)] = 0;
+      this.solid[this.idx(x, 38)] = 0;
+    }
+    for (let y = 2; y < this.h - 2; y++) {
+      this.solid[this.idx(10, y)] = 0;
+      this.solid[this.idx(20, y)] = 0;
+      this.solid[this.idx(34, y)] = 0;
+    }
+  }
+
+  resetManifested() {
+    this.cellTok.fill(0);
+  }
+
+  isSolid(wx, wy) {
+    const x = Math.floor(wx), y = Math.floor(wy);
+    if (x < 0 || y < 0 || x >= this.w || y >= this.h) return true;
+    return this.solid[this.idx(x, y)] === 1;
+  }
+
+  tokenAtCell(x, y) {
+    x = clampInt(x, 0, this.w - 1);
+    y = clampInt(y, 0, this.h - 1);
+    return this.cellTok[this.idx(x, y)];
+  }
+
+  queueJump(n) { 
+    this.jumpQueue += (n | 0); 
+  }
+
+  step(px, py, pa, dt) {
+    this.time += dt;
+
+    // CALENDAR CONFLICT (from PITOMADOM)
+    // Hebrew lunar year: 354 days (12 months × 29.5 days)
+    // Gregorian solar year: 365 days
+    // The 11-day difference creates phase drift that accumulates
+    // This drift is the WORMHOLE GATE — when calendars disagree, spacetime tears
+    
+    const hebrewPhase = phase(this.time, this.hebrewCycle);   // 0..1
+    const gregorianPhase = phase(this.time, this.gregorianCycle); // 0..1
+    
+    // raw drift: absolute phase difference
+    // when phases diverge, the calendar conflict intensifies
+    const rawDrift = Math.abs(hebrewPhase - gregorianPhase);
+    
+    // scaled drift: multiply by configured intensity (default 11 for 11-day difference)
+    // this creates the "11-day drift tracking" from PITOMADOM
+    const drift = rawDrift * (this.cfg.calendarDrift / 11);
+    this.metrics.calendarDrift = drift;
+
+    // context token from motion/pose
+    const seedTok = this._positionToken(px, py, pa);
+    this._pushCtx(seedTok);
+
+    // forward "destined" distribution
+    const out = this.model.forward(this.ctx);
+    
+    // apply entropy floor (LAW OF NATURE)
+    const entropy = Math.max(this.cfg.entropyFloor, out.entropy);
+    this.metrics.entropy = 0.92 * this.metrics.entropy + 0.08 * entropy;
+    this.metrics.perplexity = 0.92 * this.metrics.perplexity + 0.08 * out.perplexity;
+    
+    // apply resonance ceiling (LAW OF NATURE)
+    const resonance = Math.min(this.cfg.resonanceCeiling, out.resonanceField);
+    this.metrics.resonanceField = 0.90 * this.metrics.resonanceField + 0.10 * resonance;
+
+    // update emergence (LAW: low entropy + high resonance = the field "knows" something)
+    this.metrics.updateEmergence(entropy, resonance);
+
+    // dissonance = drift + symKL(prev, now) + entropy delta
+    let symkl = 0;
+    if (this._prevProbs) symkl = symKL(this._prevProbs, out.probs);
+    this._prevProbs = out.probs;
+
+    const entDelta = Math.abs(out.entropy - this.metrics.entropy);
+    const dis = clamp01(
+      0.45 * clamp01(drift) + 
+      0.35 * clamp01(symkl * 0.12) + 
+      0.20 * clamp01(entDelta * 0.6)
+    );
+    this.metrics.dissonance = 0.90 * this.metrics.dissonance + 0.10 * dis;
+
+    // prophecy manifests geometry
+    this._manifestAround(px, py, pa, out.probs);
+
+    // emotional layer (suffering field)
+    const debtSpike = clamp01(this.metrics.debt * 0.08);
+    const pplSpike = clamp01((this.metrics.perplexity - 2.0) * 0.08);
+
+    this.metrics.arousal = 0.92 * this.metrics.arousal + 0.08 * clamp01(
+      0.35 * debtSpike + 0.65 * pplSpike
+    );
+    this.metrics.tension = 0.995 * this.metrics.tension + 0.005 * clamp01(
+      this.metrics.dissonance + drift * 0.6
+    );
+
+    // presence pulse from current context
+    let presenceSum = 0;
+    for (const id of this.ctx) {
+      presenceSum += this.model.presenceAccum[id] || 0;
+    }
+    this.metrics.presencePulse = presenceSum / Math.max(1, this.ctx.length);
+
+    // pain is the "dark" composite
+    this.metrics.updatePain();
+
+    // tunneling gate: compress steps (reasoning skip) -> force wormhole
+    const gate = this.metrics.dissonance > this.cfg.tunnelThreshold;
+    const wantsTunnel = gate && (Math.random() < this.cfg.tunnelChance);
+
+    if (wantsTunnel) {
+      const skip = 2 + Math.floor(Math.random() * this.cfg.tunnelSkipMax);
+      this.metrics.tunnelDepth = skip;
+      
+      // fast-forward prophecy: manifest multiple times ahead
+      for (let k = 0; k < skip; k++) {
+        const fakeAngle = pa + (Math.random() * 2 - 1) * 0.12;
+        const fakeTok = this._positionToken(
+          px + Math.cos(fakeAngle) * (k + 1), 
+          py + Math.sin(fakeAngle) * (k + 1), 
+          fakeAngle
+        );
+        this._pushCtx(fakeTok);
+        const o2 = this.model.forward(this.ctx);
+        this._manifestAheadStrip(px, py, fakeAngle, o2.probs, k + 1);
+      }
+      
+      // hard jolt in debt (the field "hurts")
+      this.metrics.debt += 2.2 + 2.0 * this.metrics.pain;
+      
+      // tunnel always ends in a jump
+      return this._doJump(px, py, drift, skip);
+    }
+
+    // normal wormhole gate (drift amplifies, pain amplifies)
+    const wormholeP = this.cfg.wormhole * 
+      (1 + 0.85 * drift) * 
+      (1 + 0.9 * this.metrics.pain) *
+      (1 + 0.5 * this.metrics.emergence);
+    const wantsJump = (Math.random() < wormholeP) || (this.jumpQueue !== 0);
+
+    if (wantsJump) {
+      return this._doJump(px, py, drift, 0);
+    }
+
+    return { didJump: false, x: px, y: py };
+  }
+
+  _doJump(px, py, drift, extra) {
+    const j = this.jumpQueue; 
+    this.jumpQueue = 0;
+    const amp = (6 + 10 * drift + extra * 1.2);
+    const dx = (Math.random() * 2 - 1) * amp + j;
+    const dy = (Math.random() * 2 - 1) * amp - j;
+
+    let nx = clamp(px + dx, 1.5, this.w - 2.5);
+    let ny = clamp(py + dy, 1.5, this.h - 2.5);
+
+    // find non-solid landing
+    for (let k = 0; k < 32; k++) {
+      if (!this.isSolid(nx, ny)) break;
+      nx = clamp(nx + (Math.random() * 2 - 1), 1.5, this.w - 2.5);
+      ny = clamp(ny + (Math.random() * 2 - 1), 1.5, this.h - 2.5);
+    }
+
+    this.metrics.wormholeCount++;
+    this.metrics.lastJumpTime = this.time;
+
+    return { didJump: true, x: nx, y: ny };
+  }
+
+  _pushCtx(tok) {
+    this.ctx.push(tok);
+    if (this.ctx.length > this.model.ctx) this.ctx.shift();
+  }
+
+  _positionToken(px, py, pa) {
+    // deterministic-ish "token from motion" — hash of position and angle
+    const a = Math.floor((((pa % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * 97);
+    const x = Math.floor(px * 13);
+    const y = Math.floor(py * 13);
+    const hash = (x * 73856093) ^ (y * 19349663) ^ (a * 83492791);
+    return Math.abs(hash) % this.tokenizer.vocabSize();
+  }
+
+  _manifestAround(px, py, pa, probs) {
+    const cx = Math.floor(px), cy = Math.floor(py);
+    const r = clampInt(Math.floor(2 + this.cfg.prophecy / 4), 2, 10);
+
+    const fx = Math.cos(pa), fy = Math.sin(pa);
+
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = cx + dx, y = cy + dy;
+        if (x < 1 || y < 1 || x >= this.w - 1 || y >= this.h - 1) continue;
+        const i = this.idx(x, y);
+        if (this.solid[i] !== 1) continue;
+        if (this.cellTok[i] !== 0) continue;
+
+        const ahead = (dx * fx + dy * fy);
+        const focus = clamp01(this.cfg.attendFocus + 0.08 * ahead);
+        const spread = clamp01(this.cfg.attendSpread + this.metrics.pain * 0.15);
+
+        const tok = sampleWithDestiny(probs, this.cfg.destiny, focus, spread);
+        this.cellTok[i] = tok;
+
+        // debt: surprisal of manifested token is our proxy for |destined - manifested|
+        const p = Math.max(1e-9, probs[tok]);
+        this.metrics.debt += Math.abs(-Math.log(p)) * 0.02;
+      }
+    }
+    
+    // debt decay (LAW OF NATURE: suffering is not eternal)
+    this.metrics.debt *= this.cfg.debtDecay;
+  }
+
+  _manifestAheadStrip(px, py, pa, probs, stepAhead) {
+    // "future contour" strip (prophecy as geometry)
+    const fx = Math.cos(pa), fy = Math.sin(pa);
+    const cx = Math.floor(px + fx * (2 + stepAhead));
+    const cy = Math.floor(py + fy * (2 + stepAhead));
+    const span = 3 + Math.min(6, stepAhead);
+
+    for (let t = -span; t <= span; t++) {
+      const x = cx + Math.floor(-fy * t);
+      const y = cy + Math.floor(fx * t);
+      if (x < 1 || y < 1 || x >= this.w - 1 || y >= this.h - 1) continue;
+      const i = this.idx(x, y);
+      if (this.solid[i] !== 1) continue;
+      if (this.cellTok[i] !== 0) continue;
+
+      const focus = clamp01(this.cfg.attendFocus + 0.12);
+      const spread = clamp01(this.cfg.attendSpread + 0.22);
+      this.cellTok[i] = sampleWithDestiny(probs, this.cfg.destiny * 0.5, focus, spread);
+    }
+  }
+}
+
+// ---- sampling with "destiny_bias" ----
+function sampleWithDestiny(probs, destinyBias, focus, spread) {
+  const temp = clamp(0.35 + (1 - focus) * 1.2 + spread * 0.8, 0.2, 2.2);
+
+  // choose argmax as "destined"
+  let imax = 0, pmax = probs[0];
+  for (let i = 1; i < probs.length; i++) {
+    if (probs[i] > pmax) { pmax = probs[i]; imax = i; }
+  }
+
+  if (Math.random() < destinyBias) return imax;
+
+  // otherwise sample from tempered probs
+  let sum = 0;
+  for (let i = 0; i < probs.length; i++) sum += Math.pow(probs[i], 1 / temp);
+
+  let r = Math.random() * sum;
+  for (let i = 0; i < probs.length; i++) {
+    r -= Math.pow(probs[i], 1 / temp);
+    if (r <= 0) return i;
+  }
+  return imax;
+}
+
+function symKL(p, q) {
+  // symmetric KL divergence (small, stable)
+  let a = 0, b = 0;
+  for (let i = 0; i < p.length; i++) {
+    const pi = Math.max(1e-12, p[i]);
+    const qi = Math.max(1e-12, q[i]);
+    a += pi * Math.log(pi / qi);
+    b += qi * Math.log(qi / pi);
+  }
+  return 0.5 * (a + b);
+}
+
+function phase(t, period) { 
+  return (t % period) / period; 
+}
+
+function clamp01(x) { 
+  x = Number.isFinite(x) ? x : 0; 
+  return Math.max(0, Math.min(1, x)); 
+}
+
+function clamp(x, a, b) { 
+  x = Number.isFinite(x) ? x : a; 
+  return Math.max(a, Math.min(b, x)); 
+}
+
+function clampInt(x, a, b) { 
+  x = Number.isFinite(x) ? x : a; 
+  return Math.max(a, Math.min(b, x | 0)); 
+}
