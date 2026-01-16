@@ -31,11 +31,23 @@ const GLOW_COLOR_R = 100;  // base red
 const GLOW_COLOR_G = 180;  // base green (cyan-ish)
 const GLOW_COLOR_B = 255;  // base blue
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARTICLE SYSTEM CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════════
+const MAX_PARTICLES = 200;
+const PARTICLE_LIFETIME_BASE = 2000;  // ms
+const PARTICLE_SIZE_MIN = 1;
+const PARTICLE_SIZE_MAX = 4;
+
 export class Renderer {
   constructor(canvas, tokenizer) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d", { alpha: false });
     this.tokenizer = tokenizer;
+
+    // Particle system state
+    this.particles = [];
+    this.lastParticleSpawn = 0;
   }
 
   draw(frame, p, field, metrics, entities) {
@@ -149,6 +161,12 @@ export class Renderer {
     // entities (forms) with z-test against zbuf
     this._drawEntities(frame, p, field, metrics, entities);
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // PARTICLE SYSTEM — mood-driven ambient particles
+    // ═══════════════════════════════════════════════════════════════════════
+    this._updateParticles(moodFX, metrics, w, h);
+    this._drawParticles(moodFX, metrics);
+
     // crosshair
     const cx = (w / 2) | 0, cy = (h / 2) | 0;
     ctx.fillStyle = `rgba(255,255,255,${0.70 - 0.20 * pain})`;
@@ -179,10 +197,54 @@ export class Renderer {
       ctx.fillRect(0, 0, w, h);
     }
 
-    // tunnel effect when tunneling happened recently
-    if (metrics.tunnelDepth > 0 && performance.now() - metrics.lastJumpTime * 1000 < 500) {
-      ctx.fillStyle = `rgba(255,100,200,${0.05 + 0.08 * metrics.tunnelDepth})`;
-      ctx.fillRect(0, 0, w, h);
+    // ═══════════════════════════════════════════════════════════════════════
+    // ATTENTION VISUALIZATION — where the model is "looking"
+    // ═══════════════════════════════════════════════════════════════════════
+    this._drawAttentionOverlay(w, h, field, moodFX, metrics);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MOOD HUD — small indicator in corner
+    // ═══════════════════════════════════════════════════════════════════════
+    this._drawMoodHUD(w, h, moodFX, metrics);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TELEPORT FADE TRANSITION — smooth tunnel effect
+    // ═══════════════════════════════════════════════════════════════════════
+    if (metrics.tunnelDepth > 0) {
+      const timeSinceJump = performance.now() - (metrics.lastJumpTime || 0) * 1000;
+      const fadeDuration = 600;  // ms
+
+      if (timeSinceJump < fadeDuration) {
+        // Fade curve: quick in, slow out
+        const t = timeSinceJump / fadeDuration;
+        const fadeIn = t < 0.3 ? t / 0.3 : 1;
+        const fadeOut = t > 0.3 ? 1 - (t - 0.3) / 0.7 : 1;
+        const alpha = Math.min(fadeIn, fadeOut) * (0.3 + 0.4 * metrics.tunnelDepth);
+
+        // Radial gradient from center (tunnel vision)
+        const gradient = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h) * 0.7);
+        gradient.addColorStop(0, `rgba(255,180,230,${alpha * 0.3})`);
+        gradient.addColorStop(0.5, `rgba(200,80,180,${alpha * 0.6})`);
+        gradient.addColorStop(1, `rgba(50,0,50,${alpha})`);
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+
+        // Zoom lines effect
+        if (t < 0.5) {
+          ctx.strokeStyle = `rgba(255,200,255,${alpha * 0.5})`;
+          ctx.lineWidth = 1;
+          for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            const innerR = 20 + t * 100;
+            const outerR = innerR + 80 + t * 200;
+            ctx.beginPath();
+            ctx.moveTo(w/2 + Math.cos(angle) * innerR, h/2 + Math.sin(angle) * innerR);
+            ctx.lineTo(w/2 + Math.cos(angle) * outerR, h/2 + Math.sin(angle) * outerR);
+            ctx.stroke();
+          }
+        }
+      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -707,6 +769,231 @@ export class Renderer {
     ctx.lineTo(sx, sy - 30);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ATTENTION VISUALIZATION — subtle overlay showing model focus
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  _drawAttentionOverlay(w, h, field, moodFX, metrics) {
+    const inference = field.getInferenceState ? field.getInferenceState() : null;
+    if (!inference || !inference.attention) return;
+
+    const ctx = this.ctx;
+    const attention = inference.attention;
+
+    // Only show if attention is meaningful array
+    if (!Array.isArray(attention) || attention.length < 2) return;
+
+    // Find max attention for normalization
+    let maxAtt = 0;
+    for (const a of attention) if (a > maxAtt) maxAtt = a;
+    if (maxAtt < 0.01) return;  // no significant attention
+
+    // Draw subtle attention beams from bottom (context positions)
+    const [r, g, b] = moodFX.glowColor;
+    const numPositions = Math.min(attention.length, 16);  // limit for performance
+    const spacing = w / (numPositions + 1);
+
+    for (let i = 0; i < numPositions; i++) {
+      const att = attention[i] / maxAtt;  // 0-1 normalized
+      if (att < 0.1) continue;  // skip weak attention
+
+      const x = spacing * (i + 1);
+      const alpha = att * 0.15;  // very subtle
+
+      // Vertical beam from bottom
+      const gradient = ctx.createLinearGradient(x, h, x, h * 0.3);
+      gradient.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
+      gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x - 2, h * 0.3, 4, h * 0.7);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MOOD HUD — small indicator showing current mood state
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  _drawMoodHUD(w, h, moodFX, metrics) {
+    const ctx = this.ctx;
+    const [r, g, b] = moodFX.glowColor;
+
+    // Position: bottom-left, small
+    const x = 8;
+    const y = h - 24;
+
+    // Mood name (small)
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    // Mood color dot
+    ctx.beginPath();
+    ctx.arc(x + 4, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.8)`;
+    ctx.fill();
+
+    // Mood name
+    ctx.fillStyle = `rgba(200,200,200,0.5)`;
+    ctx.fillText(moodFX.dominantMood, x + 12, y);
+
+    // Optional: tiny metrics bar
+    const barX = x + 60;
+    const barW = 30;
+
+    // Emergence bar (green)
+    ctx.fillStyle = `rgba(100,255,150,0.3)`;
+    ctx.fillRect(barX, y - 2, barW * metrics.emergence, 2);
+
+    // Entropy bar (blue)
+    ctx.fillStyle = `rgba(100,150,255,0.3)`;
+    ctx.fillRect(barX, y + 1, barW * (metrics.entropy / 4), 2);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PARTICLE SYSTEM — ambient mood particles
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  _updateParticles(moodFX, metrics, w, h) {
+    const now = performance.now();
+
+    // Spawn new particles based on particleRate
+    const spawnInterval = 50 / (moodFX.particleRate + 0.01);  // ms between spawns
+    if (now - this.lastParticleSpawn > spawnInterval && this.particles.length < MAX_PARTICLES) {
+      this._spawnParticle(moodFX, metrics, w, h, now);
+      this.lastParticleSpawn = now;
+    }
+
+    // Update existing particles
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      const age = now - p.born;
+
+      // Remove dead particles
+      if (age > p.lifetime) {
+        this.particles.splice(i, 1);
+        continue;
+      }
+
+      // Update position based on mood behavior
+      p.x += p.vx;
+      p.y += p.vy;
+
+      // Mood-specific behaviors
+      if (moodFX.rainbow) {
+        // CREATIVE: swirl
+        p.vx += Math.sin(now * 0.002 + p.phase) * 0.02;
+        p.vy += Math.cos(now * 0.002 + p.phase) * 0.02;
+      } else if (moodFX.pulse) {
+        // RESONANT: pulse outward from center
+        const dx = p.x - w / 2;
+        const dy = p.y - h / 2;
+        const dist = Math.sqrt(dx * dx + dy * dy) + 0.1;
+        p.vx += (dx / dist) * 0.01 * Math.sin(now * 0.004);
+        p.vy += (dy / dist) * 0.01 * Math.sin(now * 0.004);
+      } else if (moodFX.fog) {
+        // LIMINAL: slow drift
+        p.vx *= 0.99;
+        p.vy *= 0.99;
+      } else if (moodFX.echo) {
+        // RECURSIVE: spiral inward
+        const dx = p.x - w / 2;
+        const dy = p.y - h / 2;
+        p.vx -= dx * 0.0001;
+        p.vy -= dy * 0.0001;
+      }
+
+      // Apply drag
+      p.vx *= 0.995;
+      p.vy *= 0.995;
+
+      // Wrap around screen
+      if (p.x < 0) p.x = w;
+      if (p.x > w) p.x = 0;
+      if (p.y < 0) p.y = h;
+      if (p.y > h) p.y = 0;
+    }
+  }
+
+  _spawnParticle(moodFX, metrics, w, h, now) {
+    // Spawn position: edges or random based on mood
+    let x, y, vx, vy;
+
+    if (moodFX.pulse) {
+      // RESONANT: spawn from center
+      x = w / 2 + (Math.random() - 0.5) * 50;
+      y = h / 2 + (Math.random() - 0.5) * 50;
+      const angle = Math.random() * Math.PI * 2;
+      vx = Math.cos(angle) * 0.5;
+      vy = Math.sin(angle) * 0.5;
+    } else if (moodFX.fog) {
+      // LIMINAL: spawn everywhere, slow
+      x = Math.random() * w;
+      y = Math.random() * h;
+      vx = (Math.random() - 0.5) * 0.3;
+      vy = (Math.random() - 0.5) * 0.3;
+    } else {
+      // Default: spawn from edges, drift inward
+      const edge = Math.floor(Math.random() * 4);
+      if (edge === 0) { x = 0; y = Math.random() * h; vx = Math.random() * 0.5; vy = (Math.random() - 0.5) * 0.3; }
+      else if (edge === 1) { x = w; y = Math.random() * h; vx = -Math.random() * 0.5; vy = (Math.random() - 0.5) * 0.3; }
+      else if (edge === 2) { x = Math.random() * w; y = 0; vx = (Math.random() - 0.5) * 0.3; vy = Math.random() * 0.5; }
+      else { x = Math.random() * w; y = h; vx = (Math.random() - 0.5) * 0.3; vy = -Math.random() * 0.5; }
+    }
+
+    // Size based on emergence/entropy
+    const size = PARTICLE_SIZE_MIN + Math.random() * (PARTICLE_SIZE_MAX - PARTICLE_SIZE_MIN) *
+      (0.5 + 0.5 * metrics.emergence + 0.3 * metrics.entropy);
+
+    // Lifetime affected by mood
+    const lifetime = PARTICLE_LIFETIME_BASE * (0.5 + Math.random() * 1.0) *
+      (moodFX.fog ? 1.5 : 1.0);  // LIMINAL particles live longer
+
+    this.particles.push({
+      x, y, vx, vy,
+      size,
+      born: now,
+      lifetime,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+
+  _drawParticles(moodFX, metrics) {
+    const ctx = this.ctx;
+    const now = performance.now();
+    const [r, g, b] = moodFX.glowColor;
+
+    for (const p of this.particles) {
+      const age = now - p.born;
+      const life = 1 - age / p.lifetime;  // 1.0 → 0.0
+
+      // Fade in/out
+      let alpha = life;
+      if (age < 200) alpha *= age / 200;  // fade in
+
+      // Rainbow mode: cycle hue per particle
+      let pr = r, pg = g, pb = b;
+      if (moodFX.rainbow) {
+        const hue = (now * 0.0003 + p.phase) % 1;
+        [pr, pg, pb] = hslToRgb(hue, 0.8, 0.6);
+      }
+
+      // Draw particle
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.5 + life * 0.5), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${pr},${pg},${pb},${alpha * 0.6})`;
+      ctx.fill();
+
+      // Glow for larger particles
+      if (p.size > 2) {
+        ctx.shadowBlur = p.size * 3;
+        ctx.shadowColor = `rgba(${pr},${pg},${pb},${alpha * 0.4})`;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
   }
 }
 
